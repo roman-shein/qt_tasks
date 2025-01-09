@@ -46,6 +46,9 @@ class MyWidget(QMainWindow):
         self.set_btn()  # Создаем кнопки
         self.tab_changed(0)
 
+        self.filmsTable.setSelectionMode(QTableWidget.SelectionMode.MultiSelection)
+        self.genresTable.setSelectionMode(QTableWidget.SelectionMode.MultiSelection)
+
     def set_btn(self):
         self.addFilmButton = QPushButton("Добавить фильм", self)
         self.addFilmButton.resize(100, 30)
@@ -132,7 +135,18 @@ class MyWidget(QMainWindow):
             [el.hide() for el in self.films_btn]
             [el.show() for el in self.genres_btn]
 
+    def update_film_after_edit(self):
+        res = self.cur.execute(f"""select films.id, films.title, ifnull(genres.title, films.genre) as genre,
+         year, duration from films left join genres on films.genre = genres.id
+         where films.id = {int(self.filmsTable.item(self.arr[0][0], 0).text())}""").fetchone()
+        for j, el in enumerate(res):
+            self.filmsTable.setItem(self.arr[0][0], j, QTableWidgetItem(str(el)))
+
+        for r, c in self.arr:
+            self.filmsTable.item(r, c).setSelected(True)
+
     def add_film(self):
+        self.arr = []
         self.add_film_widget = AddFilmWidget(self)
         self.add_film_widget.show()
 
@@ -140,12 +154,14 @@ class MyWidget(QMainWindow):
         self.arr = self.filmsTable.selectedItems()
         # print(*[arr[i].text() for i in range(len(arr))])
         if self.arr:
-            r = self.arr[0].row()
-            self.edit_film_widget = AddFilmWidget(self, film_id=r)
-            self.edit_film_widget.show()
-            self.statusBar().showMessage("")
+            if len(set(i.row() for i in self.arr)) == 1:
+                self.edit_film_widget = AddFilmWidget(self, film_id=self.arr[0].row())
+                self.edit_film_widget.show()
+                self.statusBar().showMessage("")
+            else:
+                self.statusBar().showMessage("Выбрано более одной строки")
         else:
-            self.statusBar().showMessage("Некорректный запрос")
+            self.statusBar().showMessage("Ничего не выбрано")
         res = []
         for el in self.arr:
             r, c = el.row(), el.column()
@@ -171,12 +187,11 @@ class MyWidget(QMainWindow):
                 self.cur.execute("DELETE FROM films WHERE id IN (" + ", ".join(
                     '?' * len(ids)) + ")", ids)
                 self.con.commit()
+                self.arr = []
                 self.update_films_table()
-        # res = []
-        # for el in self.arr:
-        #     r, c = el.row(), el.column()
-        #     res.append((r, c))
-        # self.arr = res
+            else:
+                for el in self.arr:
+                    el.setSelected(False)
 
     def add_genre(self):
         self.edit_genre_widget = AddGenreWidget(self)
@@ -218,11 +233,6 @@ class MyWidget(QMainWindow):
                     '?' * len(ids)) + ")", ids)
                 self.con.commit()
                 self.update_genres_table()
-        # res = []
-        # for el in self.arr:
-        #     r, c = el.row(), el.column()
-        #     res.append((r, c))
-        # self.arr = res
 
 
 class AddFilmWidget(QMainWindow):
@@ -281,6 +291,7 @@ class AddFilmWidget(QMainWindow):
 
     def add_elem(self):
         if self.get_adding_verdict():
+            self.statusBar().showMessage("")
             t = self.title.toPlainText()
             y = int(self.year.toPlainText())
             d = int(self.duration.toPlainText())
@@ -302,13 +313,15 @@ class AddFilmWidget(QMainWindow):
             y = int(self.year.toPlainText())
             d = int(self.duration.toPlainText())
             g = self.params[self.comboBox.currentText()]
+            self.statusBar().showMessage("")
+            print(self.id)
 
             res = self.parent().cur.execute(f"""update films
                                             set title = "{t}", year = {y}, genre = {g}, duration = {d}
                                             where id = {self.id}""")
 
             self.parent().con.commit()
-            self.parent().update_films_table()
+            self.parent().update_film_after_edit()
 
             self.close()
         else:
@@ -363,6 +376,7 @@ class AddGenreWidget(QMainWindow):
             self.parent().cur.execute(f"""insert into genres(title) values ("{t}")""")
             self.parent().con.commit()
             self.parent().update_genres_table()
+            self.statusBar().showMessage("")
 
             self.close()
         else:
@@ -370,6 +384,7 @@ class AddGenreWidget(QMainWindow):
 
     def edit_elem(self):
         if self.get_adding_verdict():
+            self.statusBar().showMessage("")
             t = self.title.toPlainText()
             res = self.parent().cur.execute(f"""update genres
                                                 set title = "{t}"
